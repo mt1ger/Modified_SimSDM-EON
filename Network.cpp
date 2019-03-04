@@ -8,8 +8,8 @@
 #include "TrafficGenerator.h"
 #include "Event.h"
 
-// #include "ResourceAssignment_FuFBF.h"
-#include "ResourceAssignment_FuFVF.h"
+#include "ResourceAssignment_FuFBF.h"
+// #include "ResourceAssignment_FuFVF.h"
 // #include "ResourceAssignment_IsolatedCore.h"
 // #include "ResourceAssignment_ICM.h"
 // #include "ResourceAssignment_FullyFlex.h"

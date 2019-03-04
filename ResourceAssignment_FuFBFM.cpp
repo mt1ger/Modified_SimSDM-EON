@@ -143,11 +143,9 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 	#endif
 
 
-	#ifdef LOCK_use_Modulation_Formats
 	ModulationFormats modulationFormats (circuitRequest, network);
 	modulationFormats.mf_chosen (CircuitRoute, &circuitRequest->OccupiedSpectralSlots, &circuitRequest->DataSize, &MF, &mfTimes);
 	NumofOccupiedSpecslots = circuitRequest->OccupiedSpectralSlots;
-	#endif
 	
 	// Calculate possible SpectralSlotSections on the link between source and its successor
 	check_availability_source (CircuitRoute[0], CircuitRoute[1], circuitRequest);
@@ -347,7 +345,7 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 			cout << "Core: " << AssignedSpectralSection[i][0] << "  Spectral Section: " << AssignedSpectralSection[i][1] << " to " << AssignedSpectralSection[i][2] << endl; 
 		}
 
-		cout << "# of Transponders Used: " << NumofGB << endl;
+		cout << "# of Guardbands Used: " << NumofGB << endl;
 		cout << "# of Transponders Used: " << NumofTransponders + NumofGB << endl;
 		cout << "# of Core Used: " << CoreCnter << endl;
 		cout << "------------------------------------------------------------" << endl;
