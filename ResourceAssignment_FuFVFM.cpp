@@ -1,5 +1,5 @@
 /**************************************************
- * Fully Flexible Bandwith-Fit  
+ * Best-Fit  
  **************************************************/
 #include <iostream>
 #include <string>
@@ -121,7 +121,7 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 
 	/*** VARIABLE DECLARATION ***/
 	vector<int> CircuitRoute;
-	bool AvailableFlag = true;
+	bool AvailableFlag = true ;
 	vector< vector<int> > AssignedSpectralSection;
 	vector<int> HAssignedSpectralSection;
 	vector<int> HPotentialSections;
@@ -133,13 +133,21 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 	unsigned int NumofTransponders = 0; // The real used number of transponders - number of guardbands
 	string MF = "QPSK";
 	unsigned int mfTimes = 0, NumofOccupiedSpectralSlots;
+	int NumofNeedGB = 0; // The number equals the demand bit rate divide the super channel bit rate 
+	double ReminderBitRate; // The reminder of the original bit rate divided by 100
+	bool ReminderFlag = true; // If the reminder above != 0
 	int TempCore = -1;
 	int TempSpecSlot = -1;
 	unsigned int core;
 
 
+	NumofOccupiedSpectralSlots = circuitRequest->OccupiedSpectralSlots;
+    ReminderBitRate = fmod ((circuitRequest->OccupiedSpectralSlots * 12.5), 100);
+	if (ReminderBitRate == 0)
+		ReminderFlag = false;
 	CircuitRoute = routingTable.get_shortest_path (circuitRequest->Src, circuitRequest->Dest);
-	modulationFormats.mf_chosen (CircuitRoute, &circuitRequest->OccupiedSpectralSlots, &circuitRequest->DataSize, &MF, &mfTimes);
+	modulationFormats.mf_chosen (CircuitRoute, &NumofOccupiedSpectralSlots, &circuitRequest->DataSize, &MF, &mfTimes);
+
 	#ifdef DEBUG_print_resource_state_on_the_path
 	cout << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@" << endl;
 	cout << "\033[0;32mPRINT\033[0m " << "resources BEFORE allcation: " << endl;
@@ -159,9 +167,8 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 	}
 	#endif
 
-	NumofOccupiedSpectralSlots = circuitRequest->OccupiedSpectralSlots;
 
-	// Calculate possible SpectralSlotSections on the link between source and its successor
+	/**** Check Available Resources, Make and Sort Sections ****/
 	check_availability_source (CircuitRoute[0], CircuitRoute[1], circuitRequest);
 	check_availability_link (&CircuitRoute);
 	
@@ -177,12 +184,12 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 	cout << endl;
 	#endif
 
-	if (circuitRequest->OccupiedSpectralSlots >= AvailableSpecSlots.size ()) {
+	/*** Use the Available Spectral Slots to form Potential Sections ***/
+	if (NumofOccupiedSpectralSlots >= AvailableSpecSlots.size ()) {
 		AvailableFlag = false;
 	}
 	else {
 		list< vector<int> >::iterator i;
-		/* Use the Available Spectral Slots to form Potential Sections */
 		for (i = AvailableSpecSlots.begin (); i != AvailableSpecSlots.end (); i++) {
 			if (HPotentialSections.empty ()) {
 				if (i != (--AvailableSpecSlots.end ())) {
@@ -231,8 +238,7 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 		}
 		cout << endl;
 		#endif
-
-		/* Sort the Sections in PotentialSections by its size from bigger to smaller */
+		/** Sort the Sections in PotentialSections by its size from bigger to smaller **/
 		int SizeSum = 0;
 		int temp = 0;
 		vector<int> Size;
@@ -265,63 +271,168 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 		cout << endl;
 		#endif 
 
+		/** Pre-Allocation **/
 		bool BiggerFlag = false;
 		bool SmallerFlag = false;
 		Index = SortedSections.begin (); 
-		while (circuitRequest->OccupiedSpectralSlots > 0) {
+		while (NumofOccupiedSpectralSlots > 0) {
 			for (i = SortedSections.begin (); i != SortedSections.end (); i++) {
 				SizeSum += i->at (2) - i->at (1) + 1; 
 			}
 
-			if (SizeSum <=circuitRequest->OccupiedSpectralSlots || SortedSections.empty ()) {
+			if (SizeSum <= NumofOccupiedSpectralSlots || SortedSections.empty ()) {
 				AvailableFlag = false;
 				break;
 			}
 			else {
+				int temp = 0;
+				if (ReminderFlag == false)
+					temp = NumofOccupiedSpectralSlots;
+				else
+					temp = NumofOccupiedSpectralSlots - 1;
 
-				/* Allocation */
-				if (Index == SortedSections.end ()) {
-					if (BiggerFlag == true) {
-						Index--;
-						SmallerFlag = true;
-						continue;
+				/* Deal with Demands Less Than 100Gb/s */
+				if ((temp * 12.5 * mfTimes + ReminderBitRate) <= 100)
+				{
+					if (Index == SortedSections.end ()) {
+						if (BiggerFlag == true) {
+							Index--;
+							SmallerFlag = true;
+							continue;
+						}
 					}
-				}
-				else if (Index->at (2) - Index->at (1) + 1 == circuitRequest->OccupiedSpectralSlots + GB) {
-					HAssignedSpectralSection.push_back (Index->at (0));
-					HAssignedSpectralSection.push_back (Index->at (1));
-					HAssignedSpectralSection.push_back (Index->at (2));
-					AssignedSpectralSection.push_back (HAssignedSpectralSection);
-					NumofGB++;
-					break;
-				}
-				else if (Index->at (2) - Index->at (1) + 1 > circuitRequest->OccupiedSpectralSlots + GB) {
-					BiggerFlag = true;
-					if (SmallerFlag == true) {
+					else if (Index->at (2) - Index->at (1) + 1 == NumofOccupiedSpectralSlots + GB) {
 						HAssignedSpectralSection.push_back (Index->at (0));
 						HAssignedSpectralSection.push_back (Index->at (1));
-						HAssignedSpectralSection.push_back (Index->at (1) + circuitRequest->OccupiedSpectralSlots + GB - 1); 
+						HAssignedSpectralSection.push_back (Index->at (2));
 						AssignedSpectralSection.push_back (HAssignedSpectralSection);
 						NumofGB++;
 						break;
 					}
-					Index++;
-				}
-				else if (Index->at (2) - Index->at (1) + 1 < circuitRequest->OccupiedSpectralSlots + GB) {
-					if (BiggerFlag == true) {
-						Index--;
-						SmallerFlag = true;
-						continue;
+					else if (Index->at (2) - Index->at (1) + 1 > NumofOccupiedSpectralSlots + GB) {
+						BiggerFlag = true;
+						if (SmallerFlag == true) {
+							HAssignedSpectralSection.push_back (Index->at (0));
+							HAssignedSpectralSection.push_back (Index->at (1));
+							HAssignedSpectralSection.push_back (Index->at (1) + NumofOccupiedSpectralSlots + GB - 1); 
+							AssignedSpectralSection.push_back (HAssignedSpectralSection);
+							NumofGB++;
+							break;
+						}
+						Index++;
 					}
-					HAssignedSpectralSection.push_back (Index->at (0));
-					HAssignedSpectralSection.push_back (Index->at (1));
-					HAssignedSpectralSection.push_back (Index->at (2));
-					AssignedSpectralSection.push_back (HAssignedSpectralSection);
-					circuitRequest->OccupiedSpectralSlots -= Index->at (2) - Index->at (1) + 1 - GB;
-					HAssignedSpectralSection.clear ();
-					Index = SortedSections.erase (Index);
-					// Index--;
-					NumofGB++;
+					else if (Index->at (2) - Index->at (1) + 1 < NumofOccupiedSpectralSlots + GB) {
+						if (BiggerFlag == true) {
+							Index--;
+							SmallerFlag = true;
+							continue;
+						}
+						HAssignedSpectralSection.push_back (Index->at (0));
+						HAssignedSpectralSection.push_back (Index->at (1));
+						HAssignedSpectralSection.push_back (Index->at (2));
+						AssignedSpectralSection.push_back (HAssignedSpectralSection);
+						NumofOccupiedSpectralSlots -= Index->at (2) - Index->at (1) + 1 - GB;
+						HAssignedSpectralSection.clear ();
+						Index = SortedSections.erase (Index);
+						// Index--;
+						NumofGB++;
+					}
+				}
+				/* Deal with Demands More Than 100Gb/s */
+				else 
+				{
+					int N = NumofOccupiedSpectralSlots;
+					while (N > 0)
+					{
+						if (N * 12.5 * mfTimes > 100) 
+							N--;
+						else 
+							break;
+					}
+					NumofNeedGB = ceil ((double) NumofOccupiedSpectralSlots / N);
+
+					if (Index == SortedSections.end ()) {
+						if (BiggerFlag == true) {
+							Index--;
+							SmallerFlag = true;
+							continue;
+						}
+					}
+					else if (Index->at (2) - Index->at (1) + 1 == NumofOccupiedSpectralSlots + NumofNeedGB * GB) {
+						int IntermediateNum = 0;
+						int GBcounter = NumofNeedGB;
+						while (Index->at (1) + IntermediateNum + N < Index->at (2) && GBcounter > 1)
+						{
+
+							HAssignedSpectralSection.push_back (0);
+							HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum);
+							HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum + N);
+							AssignedSpectralSection.push_back (HAssignedSpectralSection);
+							HAssignedSpectralSection.clear ();
+							IntermediateNum += N + 1;
+							GBcounter--;
+						}
+						HAssignedSpectralSection.push_back (Index->at (0));
+						HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum);
+						HAssignedSpectralSection.push_back (Index->at (2));
+						AssignedSpectralSection.push_back (HAssignedSpectralSection);
+						HAssignedSpectralSection.clear ();
+						NumofGB += NumofNeedGB * GB;
+						break;
+					}
+					else if (Index->at (2) - Index->at (1) + 1 > NumofOccupiedSpectralSlots + NumofNeedGB * GB) {
+						BiggerFlag = true;
+						if (SmallerFlag == true) {
+							int IntermediateNum = 0;
+							int GBcounter = NumofNeedGB;
+							while (((Index->at (1) + IntermediateNum + N) < (Index->at (1) + NumofOccupiedSpectralSlots + NumofNeedGB * GB - 1)) && (GBcounter > 1))
+							{
+								HAssignedSpectralSection.push_back (0);
+								HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum);
+								HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum + N);
+								AssignedSpectralSection.push_back (HAssignedSpectralSection);
+								HAssignedSpectralSection.clear ();
+								IntermediateNum += N + 1;
+								GBcounter--;
+							}
+							HAssignedSpectralSection.push_back (0);
+							HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum);
+							HAssignedSpectralSection.push_back (Index->at (1) + NumofOccupiedSpectralSlots + NumofNeedGB * GB - 1); 
+							AssignedSpectralSection.push_back (HAssignedSpectralSection);
+							HAssignedSpectralSection.clear ();
+							NumofGB += NumofNeedGB * GB;
+							break;
+						}
+						Index++;
+					}
+					else if (Index->at (2) - Index->at (1) + 1 < NumofOccupiedSpectralSlots + NumofNeedGB * GB) {
+						if (BiggerFlag == true) {
+							Index--;
+							SmallerFlag = true;
+							continue;
+						}
+						int IntermediateNum = 0;
+						while (Index->at (1) + IntermediateNum + N < Index->at (2) - 1)
+						{
+							HAssignedSpectralSection.push_back (Index->at (0));
+							HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum);
+							HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum + N);
+							AssignedSpectralSection.push_back (HAssignedSpectralSection);
+							HAssignedSpectralSection.clear ();
+							IntermediateNum += N + 1;
+							NumofOccupiedSpectralSlots -= Index->at (1) + IntermediateNum + N - Index->at (1) - IntermediateNum + 1 - GB;
+							NumofGB++;
+						}
+						HAssignedSpectralSection.push_back (Index->at (0));
+						HAssignedSpectralSection.push_back (Index->at (1) + IntermediateNum);
+						HAssignedSpectralSection.push_back (Index->at (2));
+						AssignedSpectralSection.push_back (HAssignedSpectralSection);
+						HAssignedSpectralSection.clear ();
+						NumofGB++;
+						NumofOccupiedSpectralSlots -= Index->at (2) - Index->at (1) - IntermediateNum + 1 - GB;
+						Index = SortedSections.erase (Index);
+						// Index--;
+					}
 				}
 			}
 		}
@@ -378,7 +489,7 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 		}
 
 		cout << "# of Guardband Used: " << NumofGB << endl;
-		cout << "# of Transponders Used: " << NumofTransponders + NumofGB << endl;
+		cout << "# of Transponders Used: " << NumofGB << endl;
 		cout << "# of Core Used: " << CoreCnter << endl;
 		cout << "------------------------------------------------------------" << endl;
 		#endif
@@ -390,8 +501,8 @@ void ResourceAssignment::handle_requests (CircuitRequest * circuitRequest) {
 		network->NumofAllocatedRequests++;
 		network->NumofSections = network->SectionNumLimitation;
 		network->TotalHoldingTime += circuitRequest->Duration;
-		network->NumofTransponders += NumofTransponders + NumofGB;
-		network->TotalTranspondersUsed += NumofTransponders + NumofGB;
+		network->NumofTransponders += NumofGB;
+		network->TotalTranspondersUsed += NumofGB;
 		network->TotalCoresUsed += CoreCnter;
 		network->TotalGBUsed += NumofGB;
 		network->TotalDataSize += circuitRequest->DataSize;
